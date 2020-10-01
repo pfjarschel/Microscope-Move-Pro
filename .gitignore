@@ -1,5 +1,6 @@
- ingaas_files/
- __pycache__/
- .vscode/
+ingaas_files/
+__pycache__/
+.vscode/
 positions.txt
 motorVels.xls
+.gitignore
