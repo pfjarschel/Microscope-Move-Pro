@@ -24,6 +24,7 @@ FormUI, WindowUI = uic.loadUiType("MainWindow_UI.ui")
 
 class ImageAcquisition:
     def __init__(self):
+        self.thread = None
 
         self.cam = None
         self.camOpen = False
