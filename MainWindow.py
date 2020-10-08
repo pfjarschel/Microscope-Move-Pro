@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Created on Wed Jan 31 17:52:19 2018
 
@@ -17,6 +17,13 @@ from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QCursor, QTransform, QPa
 import PAXCam
 import IngaasCam
 import NewportMotors
+
+ilmd_available = False
+try:
+    import importlib.metadata
+    ilmd_available = True
+except:
+    pass
 
 
 FormUI, WindowUI = uic.loadUiType("MainWindow_UI.ui")
@@ -296,6 +303,11 @@ class MainWindow(FormUI, WindowUI):
         self.movZTimer = QTimer()
         self.movZTimer.timeout.connect(self.MoveZCont)
         self.movZTimer.setInterval(500)
+
+        #Menu bar
+        self.actionAbout_Qt.triggered.connect(self.AboutQt)
+        self.actionAbout_Python.triggered.connect(self.AboutPython)
+        self.actionAbout.triggered.connect(self.About)
 
     def InitializeDevices(self):
         self.motors = NewportMotors.NewportMotors()
@@ -1119,6 +1131,61 @@ class MainWindow(FormUI, WindowUI):
     def CalcMicrons(self):
         microns = self.npixelsSpin.value()/self.microcalSpin.value()
         self.micronSpin.setValue(microns)
+
+    def AboutQt(self):
+        QMessageBox.aboutQt(self, "About Qt")
+
+    def AboutPython(self):
+        aboutText = f"<p>This software is using Python version {sys.version}.</p>" \
+                    "<p>It uses the following modules:<br>"
+
+        include_na = True
+        moduleslist = []
+        for module in sys.modules:
+            fullnm = str(sys.modules[module])
+            if not "." in module and not module.startswith("_") and not "(built-in)" in fullnm:
+                try:
+                    if ilmd_available:
+                        moduleslist.append(f"{module}\t{importlib.metadata.version(module)}, ")
+                except:
+                    try:
+                        moduleslist.append(f"{module}\t{sys.modules[module].__version__}, ")
+                    except:
+                        try:
+                            if type(modules[module].version) is str:
+                                moduleslist.append(f"{module}\t{sys.modules[module].version}, ")
+                            else:
+                                moduleslist.append(f"{module}\t{sys.modules[module].version()}, ")
+                        except:
+                            try:
+                                moduleslist.append(f"{module}\t{sys.modules[module].VERSION}, ")
+                            except:
+                                if include_na:
+                                    moduleslist.append(f"{module}, ")
+
+        moduleslist.sort(key=str.lower)
+        for text in moduleslist:
+            aboutText += text
+        aboutText = aboutText[:-2] + ".</p>"
+
+        about = QMessageBox()
+        about.setWindowTitle("About Python")
+        about.setText("<b>About Python</b>")
+        about.setInformativeText(aboutText)
+        about.setStandardButtons(QMessageBox.Ok)
+        about.setDefaultButton(QMessageBox.Ok)
+        pyicon = np.random.randint(1, 3)
+        about.setIconPixmap(QPixmap(f"python_{pyicon}.png").scaled(64,64, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
+        about.show()
+        about.exec()
+
+    def About(self):
+        aboutText = "<p><b>LCO Microscope Move PRO v.0.9</b></p>" \
+                    "<p>This software is made with Python and PyQt.</p>" \
+                    "<p>Copyright &copy; 2020</p>" \
+                    "<p>By Paulo Jarschel, no rights reserved.</p>" \
+
+        QMessageBox.about(self, "About", aboutText)
 
     def closeEvent(self, event):
         self.capTimer.stop()
