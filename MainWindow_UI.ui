@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1236</width>
+    <width>1320</width>
     <height>745</height>
    </rect>
   </property>
@@ -1335,7 +1335,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1236</width>
+     <width>1320</width>
      <height>21</height>
     </rect>
    </property>
@@ -1351,7 +1351,7 @@
     <property name="title">
      <string>Help!</string>
     </property>
-    <addaction name="actionNo_help_yet"/>
+    <addaction name="actionGuide"/>
     <addaction name="separator"/>
     <addaction name="separator"/>
     <addaction name="actionAbout_Qt"/>
@@ -1362,7 +1362,7 @@
    <addaction name="menuHelp"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
-  <action name="actionNo_help_yet">
+  <action name="actionGuide">
    <property name="text">
     <string>Guide...</string>
    </property>

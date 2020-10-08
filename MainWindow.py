@@ -10,7 +10,7 @@ import sys, time, os.path, datetime
 import numpy as np
 from threading import Timer, Thread, Lock
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QTimer, QPoint, QRectF, QDir
+from PyQt5.QtCore import Qt, QCoreApplication, QTimer, QPoint, QRectF, QDir
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QLabel, QColorDialog
 from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QCursor, QTransform, QPainter, QBrush, QPolygon, QFont, QTextOption
 
@@ -305,9 +305,12 @@ class MainWindow(FormUI, WindowUI):
         self.movZTimer.setInterval(500)
 
         #Menu bar
+        self.action_Reserved.triggered.connect(self.ShowReserved)
+        self.actionGuide.triggered.connect(self.ShowGuide)
         self.actionAbout_Qt.triggered.connect(self.AboutQt)
         self.actionAbout_Python.triggered.connect(self.AboutPython)
         self.actionAbout.triggered.connect(self.About)
+        self.actionExit.triggered.connect(self.Exit)
 
     def InitializeDevices(self):
         self.motors = NewportMotors.NewportMotors()
@@ -1132,6 +1135,34 @@ class MainWindow(FormUI, WindowUI):
         microns = self.npixelsSpin.value()/self.microcalSpin.value()
         self.micronSpin.setValue(microns)
 
+    def ShowReserved(self):
+        aboutText = f"<p>In the future, there is going to be more functions in this menu, maybe even a neat toolbar!</p>" \
+                    "<p>It is on my To-Do list, honest!</p>"
+
+        about = QMessageBox()
+        about.setWindowTitle("Reserved")
+        about.setText("<b>Reserved Menu</b>")
+        about.setInformativeText(aboutText)
+        about.setStandardButtons(QMessageBox.Ok)
+        about.setDefaultButton(QMessageBox.Ok)
+        about.setIconPixmap(QPixmap(f"hourglass.png").scaledToHeight(64, Qt.SmoothTransformation))
+        about.show()
+        about.exec()
+
+    def ShowGuide(self):
+        aboutText = f"<p>In the future, this will be a short guide.</p>" \
+                    "<p>It is not available yet.</p>"
+
+        about = QMessageBox()
+        about.setWindowTitle("Quick Guide")
+        about.setText("<b>Quick Guide</b>")
+        about.setInformativeText(aboutText)
+        about.setStandardButtons(QMessageBox.Ok)
+        about.setDefaultButton(QMessageBox.Ok)
+        about.setIconPixmap(QPixmap(f"guide.png").scaledToHeight(64, Qt.SmoothTransformation))
+        about.show()
+        about.exec()
+
     def AboutQt(self):
         QMessageBox.aboutQt(self, "About Qt")
 
@@ -1152,7 +1183,7 @@ class MainWindow(FormUI, WindowUI):
                         moduleslist.append(f"{module}\t{sys.modules[module].__version__}, ")
                     except:
                         try:
-                            if type(modules[module].version) is str:
+                            if type(sys.modules[module].version) is str:
                                 moduleslist.append(f"{module}\t{sys.modules[module].version}, ")
                             else:
                                 moduleslist.append(f"{module}\t{sys.modules[module].version()}, ")
@@ -1187,6 +1218,12 @@ class MainWindow(FormUI, WindowUI):
 
         QMessageBox.about(self, "About", aboutText)
 
+    def Exit(self):
+        self.capTimer.stop()
+        self.CloseDevices()
+        QCoreApplication.quit()
+        
+    
     def closeEvent(self, event):
         self.capTimer.stop()
         self.CloseDevices()
