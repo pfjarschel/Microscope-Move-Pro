@@ -8,8 +8,7 @@ Created on Wed Jan 31 17:52:19 2018
 
 import sys, time, os.path, datetime
 import numpy as np
-from threading import Timer
-# import MainWindow_UI
+from threading import Timer, Thread, Lock
 from PyQt5 import uic
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRectF, QDir
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QLabel, QColorDialog
@@ -23,16 +22,96 @@ import NewportMotors
 FormUI, WindowUI = uic.loadUiType("MainWindow_UI.ui")
 
 
+class ImageAcquisition:
+    def __init__(self):
+
+        self.cam = None
+        self.camOpen = False
+        self.img = QImage(640, 512, QImage.Format_RGB32)
+        self.img.fill(Qt.black)
+
+        self.started = False
+        self.read_lock = Lock()
+
+        self.t0 = time.time()
+        self.t1 = time.time()
+        self.fpsframes = 10
+        self.fps = 0
+        self.framecount = 0
+
+    def OpenCam(self, camid):
+        if camid == "PAXCam":
+            self.cam = PAXCam.PAXCam(0)
+        elif camid == "IngaasCam":
+            self.cam = IngaasCam.IngaasCam(0)
+        elif camid == "IngaasCamHG":
+            self.cam = IngaasCam.IngaasCam(1)
+
+        if self.cam.camOK:
+            self.camOpen = True
+
+        return self.camOpen
+
+    def CloseCam(self):
+        self.cam.Close()
+
+    def start(self):
+        if self.started :
+            return None
+        self.started = True
+        self.thread = Thread(target=self.update, args=())
+        self.t0 = time.time()
+        self.framecount = 0
+        self.thread.start()
+        return self
+
+    def update(self) :
+        while self.started :
+            self.read_lock.acquire()
+            
+            if self.camOpen:
+                self.img = self.cam.GetQImage()
+            else:
+                self.img = QImage(640, 480, QImage.Format_RGB32)
+                self.img.fill(Qt.black)
+            
+            self.framecount += 1
+            if self.framecount >= self.fpsframes:
+                self.t1 = time.time()
+                self.fps = self.framecount/(self.t1 - self.t0)
+                self.framecount = 0
+                self.t0 = time.time()
+
+            self.read_lock.release()
+
+    def get(self):
+        # self.read_lock.acquire()
+        # frame = self.img.copy()
+        # self.read_lock.release()
+        # return frame
+        return self.img.copy()
+
+    def stop(self) :
+        self.started = False
+        if self.thread.is_alive():
+            self.thread.join()
+
+    def __exit__(self, exc_type, exc_value, traceback) :
+        self.stop()
+        self.CloseCam()
+
+
 class MainWindow(FormUI, WindowUI):
     #Main stuff
     delayedInit = None
 
     #Camera stuff
-    cam = None
     camOpen = False
     capTimer = None
     videoBusy = False
     img = QImage()
+    camThread = None
+    fps = 0
 
     #motors stuff
     posdb = []
@@ -115,6 +194,8 @@ class MainWindow(FormUI, WindowUI):
         self.drawColor = QColor(0, 255, 0, 255)
         self.drawcolorBut.setStyleSheet(f"background-color: rgb({self.drawColor.red()}, {self.drawColor.green()}, {self.drawColor.blue()})")
 
+        self.statusbar.showMessage(f"FPS: {self.fps:.2f} (Camera closed)")
+
     def FixOverlays(self):
         self.fscaleOverlay.move(0, 0)
         self.fscaleOverlay.resize(self.camView.width(), self.camView.height())
@@ -196,7 +277,7 @@ class MainWindow(FormUI, WindowUI):
         #Video
         self.capTimer = QTimer()
         self.capTimer.timeout.connect(self.CaptureVideo)
-        self.capTimer.setInterval(15)
+        self.capTimer.setInterval(10)
 
         #Motors
         self.getposTimer = QTimer()
@@ -253,17 +334,17 @@ class MainWindow(FormUI, WindowUI):
 
     def OpenCamera(self):
         if self.paxRadio.isChecked():
-            self.cam = PAXCam.PAXCam(0)
+            self.camThread.OpenCam("PAXCam")
         elif self.ingaasRadio.isChecked():
-            self.cam = IngaasCam.IngaasCam(0)
+            self.camThread.OpenCam("IngaasCam")
         elif self.ingaasHGRadio.isChecked():
-            self.cam = IngaasCam.IngaasCam(1)
+            self.camThread.OpenCam("IngaasCamHG")
 
-        if self.cam.camOK:
+        if self.camThread.cam.camOK:
             self.camOpen = True
             self.camOK.setPixmap(QPixmap("green_led.png"))
-            self.gainSlider.setValue(int(self.cam.GetGain()))
-            self.exposureSlider.setValue(int(self.cam.GetExposure()))
+            self.gainSlider.setValue(int(self.camThread.cam.GetGain()))
+            self.exposureSlider.setValue(int(self.camThread.cam.GetExposure()))
             self.CalcCalibrationScale()
 
     def ChangeCam(self):
@@ -272,9 +353,9 @@ class MainWindow(FormUI, WindowUI):
             self.capTimer.stop()
             self.camOpen = False
             self.camOK.setPixmap(QPixmap("red_led.png"))
-            self.cam.Close()
+            self.camThread.cam.Close()
             time.sleep(0.2)
-            del self.cam
+            del self.camThread.cam
             time.sleep(0.2)
             self.OpenCamera()
             if recap:
@@ -282,26 +363,35 @@ class MainWindow(FormUI, WindowUI):
 
     def CloseDevices(self):
         if self.camOpen:
-            self.cam.Close()
+            self.camThread.stop()
+            self.camThread.CloseCam()
             self.camOpen = False
+            self.camThread = None
+            self.statusbar.showMessage(f"FPS: {self.fps:.2f} (Camera closed)")
+            
 
     def OnStartButClicked(self):
+        self.camThread = None
+        self.camThread = ImageAcquisition().start()
+
         if not self.camOpen:
             self.OpenCamera()
+
         self.capTimer.start()
         Timer(0.2, self.DrawFixedScale).start()
 
 
     def OnStopButClicked(self):
         self.capTimer.stop()
+        self.CloseDevices()
 
     def OnExpSliderChanged(self):
         if self.camOpen:
-            self.cam.SetExposure(self.exposureSlider.value())
+            self.camThread.cam.SetExposure(self.exposureSlider.value())
 
     def OnGainSliderChanged(self):
         if self.camOpen:
-            self.cam.SetGain(self.gainSlider.value())
+            self.camThread.cam.SetGain(self.gainSlider.value())
 
     def UpdateMultiSpin(self):
         self.multiSpin.setValue(self.multiDial.value())
@@ -312,7 +402,7 @@ class MainWindow(FormUI, WindowUI):
     def CaptureVideo(self):
         if not self.videoBusy and self.camOpen:
             self.videoBusy = True
-            self.img = self.cam.GetQImage()
+            self.img = self.camThread.get()
             pix = QPixmap(self.camView.width(), self.camView.height())
             pix.fill(Qt.black)
             img = self.img.scaled(self.camView.size(), Qt.KeepAspectRatio)
@@ -331,6 +421,9 @@ class MainWindow(FormUI, WindowUI):
             if(fv != 1 or fh != 1):
                 pix = pix.transformed(QTransform().scale(fh, fv))
             self.camView.setPixmap(pix)
+            if self.fps != self.camThread.fps:
+                self.fps = self.camThread.fps
+                self.statusbar.showMessage(f"FPS: {self.fps:.2f}")
             self.videoBusy = False
 
     def SaveFrame(self):
@@ -362,6 +455,8 @@ class MainWindow(FormUI, WindowUI):
                 painter.drawPixmap(0,0,self.scaleOverlay.pixmap())
             if self.fscaleOverlay.pixmap() is not None:
                 painter.drawPixmap(0,0,self.fscaleOverlay.pixmap())
+            if self.markerOverlay.pixmap() is not None:
+                painter.drawPixmap(0,0,self.markerOverlay.pixmap())
             painter.end()
             stackPix.toImage().scaled(self.camView.size(), Qt.IgnoreAspectRatio).save(filename)
         if recap:
@@ -747,12 +842,12 @@ class MainWindow(FormUI, WindowUI):
             dx = event.x() - self.camView.width() / 2
             dy = event.y() - self.camView.height() / 2
             ratioView = self.camView.width()/self.camView.height()
-            ratioFrame = self.cam.frameW/self.cam.frameH
+            ratioFrame = self.camThread.cam.frameW/self.camThread.cam.frameH
             scale = 1
             if ratioView < ratioFrame:
-                scale = self.cam.frameW/self.camView.width()
+                scale = self.camThread.cam.frameW/self.camView.width()
             else:
-                scale = self.cam.frameH/self.camView.height()
+                scale = self.camThread.cam.frameH/self.camView.height()
             dx = dx*scale
             dy = dy*scale
             dxm = dx/self.microcalSpin.value()
@@ -843,12 +938,12 @@ class MainWindow(FormUI, WindowUI):
         end2 = QPoint(int(np.round(self.mouseX - endx)), int(np.round(self.mouseY - endy)))
 
         ratioView = self.camView.width()/self.camView.height()
-        ratioFrame = self.cam.frameW/self.cam.frameH
+        ratioFrame = self.camThread.cam.frameW/self.camThread.cam.frameH
         scale = 1
         if ratioView < ratioFrame:
-            scale = self.cam.frameW/self.camView.width()
+            scale = self.camThread.cam.frameW/self.camView.width()
         else:
-            scale = self.cam.frameH/self.camView.height()
+            scale = self.camThread.cam.frameH/self.camView.height()
         dx = dx*scale
         dy = dy*scale
 
@@ -958,12 +1053,12 @@ class MainWindow(FormUI, WindowUI):
             midtickh1 = 10
             midtickh2 = 6
             ratioView = self.camView.width()/self.camView.height()
-            ratioFrame = self.cam.frameW/self.cam.frameH
+            ratioFrame = self.camThread.cam.frameW/self.camThread.cam.frameH
             scale = 1
             if ratioView < ratioFrame:
-                scale = self.cam.frameW/self.camView.width()
+                scale = self.camThread.cam.frameW/self.camView.width()
             else:
-                scale = self.cam.frameH/self.camView.height()
+                scale = self.camThread.cam.frameH/self.camView.height()
             micronScale = basesize*scale/self.microcalSpin.value()
             if micronScale <= 10:
                 micronScale = int(np.round(micronScale))
@@ -1009,8 +1104,8 @@ class MainWindow(FormUI, WindowUI):
 
     def CalcCalibrationScale(self):
         if self.camOpen:
-            size = self.cam.ccdSize[0]/(self.lensmagSpin.value()*self.zoomSpin.value())
-            scale = self.cam.maxW/size
+            size = self.camThread.cam.ccdSize[0]/(self.lensmagSpin.value()*self.zoomSpin.value())
+            scale = self.camThread.cam.maxW/size
             magic = 1.52
             self.microcalSpin.setValue(scale*magic)
         else:
@@ -1025,8 +1120,8 @@ class MainWindow(FormUI, WindowUI):
         self.micronSpin.setValue(microns)
 
     def closeEvent(self, event):
-        self.CloseDevices()
         self.capTimer.stop()
+        self.CloseDevices()
 
 
 #Run
